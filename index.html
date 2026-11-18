@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>GPSMarteau2335</title>
+    <title>GPSMarteau2338</title>
     <!-- Tailwind CSS pour un design propre et mobile-friendly -->
     <script src="https://tailwindcss.com"></script>
     <!-- Icônes Lucide -->
@@ -14,7 +14,7 @@
     <!-- ÉCRAN D'ACCUEIL : SESSIONS -->
     <div id="home-screen" class="p-4 max-w-md mx-auto">
         <header class="mb-6 flex justify-between items-center">
-            <h1 class="text-2xl font-bold tracking-tight text-emerald-400">🔨 GPSMarteau2339</h1>
+            <h1 class="text-2xl font-bold tracking-tight text-emerald-400">🔨 GPSMarteau</h1>
             <button onclick="createNewSession()" class="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl text-sm font-medium shadow-md flex items-center gap-1">
                 <i data-lucide="plus" class="w-4 h-4"></i> Nouvelle Session
             </button>
@@ -265,7 +265,7 @@ const session = appData.sessions.find(s => s.id === activeSessionId);
 const tbody = document.getElementById('data-table-body');
 tbody.innerHTML = '';
 if (session.lines.length === 0) {
-tbody.innerHTML = <tr><td colspan="3" class="p-4 text-center text-slate-500 italic">Aucune donnée dictée</td></tr>;
+tbody.innerHTML = '<tr><td colspan="3" class="p-4 text-center text-slate-500 italic">Aucune donnée dictée</td></tr>';
 return;
 }
 // Affiche les lignes (les plus récentes en premier)
@@ -512,7 +512,7 @@ const removedLine = session.lines.pop();
 saveToStorage();
 renderDataTable();
 setTimeout(() => {
-speak(Dernière ligne effacée : ${removedLine.essence} ${removedLine.diametre});
+	speak(\ Dernière ligne effacée : ${removedLine.essence} ${removedLine.diametre}`);`
 }, 1000);
 } else {
 speak("Aucune ligne à effacer");
@@ -543,8 +543,8 @@ y: currentCoords.lon
 session.lines.push(newLine);
 saveToStorage();
 renderDataTable();
-document.getElementById('speech-feedback').innerText = ${essence} ${diametre};
-speak(${essence} ${diametre});
+document.getElementById('speech-feedback').innerText = \ ${essence} ${diametre}`;`
+speak(\ ${essence} ${diametre})`;`
 }
 } else {
 triggerRepeatFeedback();
@@ -568,7 +568,7 @@ return string.charAt(0).toUpperCase() + string.slice(1);
 function shareSession(id) {
 const session = appData.sessions.find(s => s.id === id);
 const dateStr = new Date().toISOString().slice(0,10).replace(/-/g, "");
-const filename = GPSMartelage_${session.name}_${dateStr}.json; // .json ou .gpkg simulé
+const filename = `GPSMartelage_${session.name}_${dateStr}.json`; // .json ou .gpkg simulé
 // Note technique : Un fichier GeoPackage (.gpkg) est une base de données SQLite binaire complexe.
 // Les navigateurs Web ne peuvent pas compiler un binaire GPKG de manière native sans lourde bibliothèque (comme SQL.js).
 // Pour le partage d'une WebApp mobile, nous générons un GeoJSON standard exportable lisible par QGIS / ArcGIS.
