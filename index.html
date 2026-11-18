@@ -14,7 +14,7 @@
     <!-- ÉCRAN D'ACCUEIL : SESSIONS -->
     <div id="home-screen" class="p-4 max-w-md mx-auto">
         <header class="mb-6 flex justify-between items-center">
-            <h1 class="text-2xl font-bold tracking-tight text-emerald-400">🔨 GPSMarteau0044</h1>
+            <h1 class="text-2xl font-bold tracking-tight text-emerald-400">🔨 GPSMarteau0057</h1>
             <button onclick="createNewSession()" class="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl text-sm font-medium shadow-md flex items-center gap-1">
                 <i data-lucide="plus" class="w-4 h-4"></i> Nouvelle Session
             </button>
@@ -614,35 +614,76 @@ speak("Aucune ligne à effacer");
 return;
 }
 
-// Ordre principal : "GPSMarteau [Essence] [Nombre]"
+// Ordre principal : "GPSMarteau [Essence] [Diamètre]".
+// Les essences sont contrôlées pour éviter d'enregistrer un mot mal reconnu.
 if (cleanPhrase.startsWith("gpsmarteau")) {
-// Découpe les mots après "gpsmarteau"
-const tokens = cleanPhrase.replace("gpsmarteau", "").trim().split(/\s+/);
-if (tokens.length >= 2) {
-const essence = capitalizeFirstLetter(tokens[0]);
-const diametreStr = tokens[1];
-const diametre = parseInt(diametreStr, 10);
-// Validation de l'essence (chaîne) et du diamètre (entier entre 0 et 150)
-if (isNaN(diametre) || diametre < 0 || diametre > 150 || essence.length < 2) {
-triggerRepeatFeedback();
-} else {
-// Enregistrement de l'arbre
-const session = appData.sessions.find(s => s.id === activeSessionId);
-const newLine = {
-essence: essence,
-diametre: diametre,
-x: currentCoords.lat, // Stocké en WGS84 nativement (voir remarque ci-dessous)
-y: currentCoords.lon
-};
-session.lines.push(newLine);
-saveToStorage();
-renderDataTable();
-document.getElementById('speech-feedback').innerText = `${essence} ${diametre}`;
-repeatRecordedValuesAfterSilence(essence, diametre);
+    const commandText = cleanPhrase.replace(/^gpsmarteau\s*/, "").trim();
+    const tokens = commandText.split(/\s+/).filter(Boolean);
+    if (tokens.length < 2) {
+        triggerRepeatFeedback();
+        return;
+    }
+
+    const diametreStr = tokens[tokens.length - 1];
+    // Accepte uniquement un nombre entier complet, pas une valeur partiellement reconnue.
+    if (!/^\d{1,3}$/.test(diametreStr)) {
+        triggerRepeatFeedback();
+        return;
+    }
+    const diametre = Number(diametreStr);
+    if (diametre < 0 || diametre > 150) {
+        triggerRepeatFeedback();
+        return;
+    }
+
+    const spokenEssence = tokens.slice(0, -1).join(" ");
+    const essence = recognizeEssence(spokenEssence);
+    if (!essence) {
+        triggerRepeatFeedback();
+        return;
+    }
+
+    const session = appData.sessions.find(s => s.id === activeSessionId && !s.deleted);
+    if (!session) {
+        triggerRepeatFeedback();
+        return;
+    }
+    const newLine = {
+        essence: essence,
+        diametre: diametre,
+        x: currentCoords.lat,
+        y: currentCoords.lon
+    };
+    session.lines.push(newLine);
+    saveToStorage();
+    renderDataTable();
+    document.getElementById('speech-feedback').innerText = `${essence} ${diametre}`;
+    repeatRecordedValuesAfterSilence(essence, diametre);
 }
-} else {
-triggerRepeatFeedback();
+
+// Vocabulaire reconnu. Les accents et variantes courantes de prononciation
+// sont normalisés avant comparaison.
+function normalizeVoiceTerm(value) {
+    return value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+        .replace(/[’']/g, " ").replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
 }
+
+function recognizeEssence(spoken) {
+    const term = normalizeVoiceTerm(spoken);
+    const vocabulary = {
+        "sapin pectine": "Sapin pectiné",
+        "sapin": "Sapin pectiné",
+        "epicea commun": "Épicéa commun",
+        "epicea": "Épicéa commun",
+        "e picea": "Épicéa commun",
+        "douglas": "Douglas",
+        "pin noir": "Pin noir",
+        "chene": "Chêne",
+        "chen": "Chêne",
+        "pin sylvestre": "Pin sylvestre",
+        "sylvestre": "Pin sylvestre"
+    };
+    return vocabulary[term] || null;
 }
 }
 
@@ -683,12 +724,26 @@ function repeatRecordedValuesAfterSilence(essence, diametre) {
 }
 
 function triggerRepeatFeedback() {
-stopSpeechRecognition(); // On coupe la reco pour ne pas s'auto-écouter
-setTimeout(() => {
-speak("répétez", () => {
-startSpeechRecognition();
-});
-}, 2000);
+    // Suspend l'écoute pendant le délai et l'annonce pour éviter que le téléphone
+    // ne capte sa propre voix. La reconnaissance reprend ensuite automatiquement.
+    speechCanRestart = false;
+    stopSpeechRecognition();
+    readbackPending = true;
+    updateVoiceStatus(false, "Répétition dans 2 secondes…");
+    document.getElementById('speech-feedback').innerText = "Ordre non compris — répétition demandée";
+    setTimeout(() => {
+        if (!activeSessionId || isPaused) {
+            readbackPending = false;
+            return;
+        }
+        speak("répétez", () => {
+            readbackPending = false;
+            if (activeSessionId && !isPaused) {
+                speechCanRestart = true;
+                startSpeechRecognition(false);
+            }
+        });
+    }, 2000);
 }
 
 function capitalizeFirstLetter(string) {
