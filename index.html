@@ -14,7 +14,7 @@
     <!-- ÉCRAN D'ACCUEIL : SESSIONS -->
     <div id="home-screen" class="p-4 max-w-md mx-auto">
         <header class="mb-6 flex justify-between items-center">
-            <h1 class="text-2xl font-bold tracking-tight text-emerald-400">🔨 GPSMarteau0029</h1>
+            <h1 class="text-2xl font-bold tracking-tight text-emerald-400">🔨 GPSMarteau0034</h1>
             <button onclick="createNewSession()" class="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl text-sm font-medium shadow-md flex items-center gap-1">
                 <i data-lucide="plus" class="w-4 h-4"></i> Nouvelle Session
             </button>
@@ -253,6 +253,9 @@ el.classList.toggle('hidden');
 // --- ENREGISTREMENT EN DIRECT ---
 function openSession(id) {
 activeSessionId = id;
+// Conserve aussi l'identifiant sur l'écran de travail : cela permet de le
+// retrouver si l'état JavaScript actif est réinitialisé par Safari.
+document.getElementById('work-screen').dataset.sessionId = id;
 isPaused = false;
 const session = appData.sessions.find(s => s.id === id);
 document.getElementById('active-session-title').innerText = session.name;
@@ -265,6 +268,7 @@ startSpeechRecognition();
 function closeSession() {
 stopSpeechRecognition();
 activeSessionId = null;
+document.getElementById('work-screen').dataset.sessionId = '';
 document.getElementById('work-screen').classList.add('hidden');
 document.getElementById('home-screen').classList.remove('hidden');
 renderHomeScreen();
@@ -464,8 +468,23 @@ function startSpeechRecognition(fromButton = false) {
         return;
     }
 
+    // Récupération de secours : l'écran de travail mémorise l'identifiant
+    // de la session ouverte. Cela évite un faux message 'ouvrez une session'
+    // si Safari a perdu la variable globale.
     if (!activeSessionId) {
-        zone.innerText = "Ouvrez une session avant d'activer le microphone.";
+        const workScreen = document.getElementById('work-screen');
+        const savedSessionId = workScreen && workScreen.dataset.sessionId;
+        const savedSession = savedSessionId
+            ? appData.sessions.find(s => s.id === savedSessionId && !s.deleted)
+            : null;
+        if (savedSession) activeSessionId = savedSession.id;
+    }
+
+    if (!activeSessionId) {
+        zone.innerText = "Session non retrouvée. Revenez à l'accueil puis ouvrez la session en touchant son nom.";
+        setSpeechDebug("Diagnostic : activeSessionId vide ; écran de travail = " +
+            (document.getElementById('work-screen').classList.contains('hidden') ? "masqué" : "affiché") +
+            " ; identifiant mémorisé = " + (document.getElementById('work-screen').dataset.sessionId || "aucun"));
         return;
     }
 
