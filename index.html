@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>GPSMarteau2356</title>
+    <title>GPSMarteau</title>
     <!-- Tailwind CSS pour un design propre et mobile-friendly -->
     <script src="https://tailwindcss.com"></script>
     <!-- Icônes Lucide -->
@@ -14,7 +14,7 @@
     <!-- ÉCRAN D'ACCUEIL : SESSIONS -->
     <div id="home-screen" class="p-4 max-w-md mx-auto">
         <header class="mb-6 flex justify-between items-center">
-            <h1 class="text-2xl font-bold tracking-tight text-emerald-400">🔨 GPSMarteau2356</h1>
+            <h1 class="text-2xl font-bold tracking-tight text-emerald-400">🔨 GPSMarteau</h1>
             <button onclick="createNewSession()" class="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl text-sm font-medium shadow-md flex items-center gap-1">
                 <i data-lucide="plus" class="w-4 h-4"></i> Nouvelle Session
             </button>
@@ -58,7 +58,14 @@
                 <i data-lucide="mic-off" id="main-mic-icon" class="w-6 h-6 text-slate-400"></i>
             </div>
             <p id="speech-transcript" class="text-sm text-slate-400 italic px-2">"En attente de votre ordre..."</p>
-            <p id="speech-feedback" class="text-base font-bold text-emerald-400 mt-2 h-6"></p>
+            <p id="speech-feedback" class="text-base font-bold text-emerald-400 mt-2 min-h-6"></p>
+            <button id="mic-test-button" type="button" onclick="startSpeechRecognition(true)"
+                class="mt-3 bg-emerald-700 hover:bg-emerald-600 text-white px-4 py-2 rounded-xl text-sm font-semibold">
+                Activer / tester le microphone
+            </button>
+            <p id="speech-debug" class="text-xs text-slate-500 mt-2" aria-live="polite">
+                Le test affichera ici l'état de la reconnaissance vocale.
+            </p>
         </div>
 
         <!-- Tableau des données capturées -->
@@ -107,6 +114,9 @@
             purgeOldDeletedSessions();
             renderHomeScreen();
             initSpeechRecognition();
+            if (!window.isSecureContext) {
+                setSpeechDebug("ATTENTION : page non sécurisée (file:// ou HTTP). La reconnaissance vocale peut être bloquée. Utilisez une adresse HTTPS.");
+            }
             lucide.createIcons();
         };
 
@@ -261,24 +271,31 @@ renderHomeScreen();
 }
 
 function renderDataTable() {
-const session = appData.sessions.find(s => s.id === activeSessionId);
-const tbody = document.getElementById('data-table-body');
-tbody.innerHTML = '';
-if (session.lines.length === 0) {
-tbody.innerHTML = '<tr><td colspan="3" class="p-4 text-center text-slate-500 italic">Aucune donnée dictée</td></tr>';
-return;
+    const session = appData.sessions.find(s => s.id === activeSessionId);
+    const tbody = document.getElementById('data-table-body');
+    tbody.innerHTML = '';
+
+    if (!session || session.lines.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="3" class="p-4 text-center text-slate-500 italic">Aucune donnée dictée</td></tr>';
+        return;
+    }
+
+    [...session.lines].reverse().forEach(line => {
+        const tr = document.createElement('tr');
+        tr.className = "hover:bg-slate-800/50";
+        tr.innerHTML = `
+            <td class="p-3">${escapeHtml(line.essence)}</td>
+            <td class="p-3 text-center">${Number(line.diametre)}</td>
+            <td class="p-3 text-right">${Number(line.x).toFixed(5)}, ${Number(line.y).toFixed(5)}</td>
+        `;
+        tbody.appendChild(tr);
+    });
 }
-// Affiche les lignes (les plus récentes en premier)
-[...session.lines].reverse().forEach(line => {
-const tr = document.createElement('tr');
-tr.className = "hover:bg-slate-800/50";
-tr.innerHTML = `
-${line.essence}
-${line.diametre}
-\({line.x.toFixed(5)}, \){line.y.toFixed(5)}
-`;
-tbody.appendChild(tr);
-});
+
+function escapeHtml(value) {
+    return String(value).replace(/[&<>"']/g, character => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[character]));
 }
 
 // --- RECONNAISSANCE ET SYNTHÈSE VOCALE (Web Speech API) ---
@@ -293,235 +310,211 @@ utterance.onend = () => callback();
 window.speechSynthesis.speak(utterance);
 }
 }
-/*
-function initSpeechRecognition() {
-const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-if (!SpeechRecognition) {
-alert("La reconnaissance vocale n'est pas supportée par votre navigateur (Utilisez Safari sur iOS ou Chrome).");
-return;
+let recognitionStarting = false;
+let recognitionRunning = false;
+let recognitionRestartTimer = null;
+let speechSupported = false;
+let speechCanRestart = true;
+
+function setSpeechDebug(message) {
+    const debug = document.getElementById('speech-debug');
+    if (debug) debug.innerText = message;
+    console.log("[GPSMarteau - vocal]", message);
 }
-recognition = new SpeechRecognition();
-recognition.continuous = true;
-recognition.interimResults = false;
-recognition.lang = 'fr-FR';
-recognition.onstart = () => {
-updateVoiceStatus(true, isPaused ? "En Pause" : "En écoute");
-};
-recognition.onerror = (event) => {
-console.error("Erreur de reco vocale:", event.error);
-if (event.error === 'not-allowed') {
-alert("Veuillez autoriser l'accès au micro.");
-}
-};
-recognition.onend = () => {
-// Redémarrage automatique si on est toujours dans l'écran de travail
-//BG if (activeSessionId) {
-recognition.start();
-//BG } else {
-//BG updateVoiceStatus(false, "Inactif");
-//BG }
-};
-//recognition.onresult = (event) => {
-//const resultIndex = event.resultIndex;
-//const transcript = event.results[resultIndex][0].transcript.trim().toLowerCase();
-//document.getElementById('speech-transcript').innerText = "${event.results[resultIndex][0].transcript.trim()}";
-//processVoiceOrder(transcript);
-//};
 
-recognition.onresult = (event) => {
-
-    let interimTranscript = '';
-    let finalTranscript = '';
-
-    for (let i = event.resultIndex; i < event.results.length; ++i) {
-
-        let texte = event.results[i][0].transcript;
-
-        if (event.results[i].isFinal) {
-            finalTranscript += texte;
-        } else {
-            interimTranscript += texte;
-        }
-    }
-
-    // AFFICHAGE EN TEMPS REEL DE CE QUE LE MICRO ENTEND
-    const zoneTranscription = document.getElementById('speech-transcript');
-
-    const texteAffiche = finalTranscript || interimTranscript;
-
-    zoneTranscription.innerText = texteAffiche
-        ? 'Entendu : "' + texteAffiche + '"'
-        : 'En attente de votre voix...';
-
-    // DIAGNOSTIC DANS LA CONSOLE DU NAVIGATEUR
-    console.log("TRANSCRIPTION :", texteAffiche);
-
-    // TRAITEMENT UNIQUEMENT QUAND LA PHRASE EST TERMINEE
-    if (finalTranscript !== '') {
-
-        console.log("COMMANDE FINALE :", finalTranscript);
-
-        document.getElementById('speech-feedback').innerText =
-            "Commande entendue";
-
-        processVoiceOrder(finalTranscript.trim().toLowerCase());
-    }
-};
-
-}
-*/
 function initSpeechRecognition() {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
     if (!SpeechRecognition) {
-        alert("La reconnaissance vocale n'est pas supportée. Sur iPhone, utilisez obligatoirement Safari.");
+        speechSupported = false;
+        updateVoiceStatus(false, "Non disponible");
+        document.getElementById('speech-transcript').innerText =
+            "Reconnaissance vocale indisponible dans ce navigateur.";
+        setSpeechDebug("API SpeechRecognition absente. Essayez Safari à jour.");
         return;
     }
+
+    speechSupported = true;
     recognition = new SpeechRecognition();
-    // EN PASSANT CONTINUOUS À FALSE ET INTERIM RESULTS À TRUE, ON VOIT LE TEXTE S'AFFICHER AU FUR ET À MESURE
-    recognition.continuous = false; 
-    recognition.interimResults = true; 
+    recognition.continuous = false;
+    recognition.interimResults = true;
     recognition.lang = 'fr-FR';
 
- //   recognition.onstart = () => {
- //       updateVoiceStatus(true, isPaused ? "En Pause" : "En écoute");
- //   };
+    recognition.onstart = () => {
+        recognitionStarting = false;
+        recognitionRunning = true;
+        updateVoiceStatus(true, "ÉCOUTE EN COURS");
+        document.getElementById('speech-transcript').innerText =
+            "Micro activé : dites « Bonjour » pour tester.";
+        setSpeechDebug("Événement onstart reçu : le navigateur a démarré la reconnaissance.");
+    };
 
-recognition.onstart = () => {
+    recognition.onaudiostart = () => {
+        setSpeechDebug("Flux audio démarré : le navigateur reçoit le flux du microphone.");
+    };
 
-    updateVoiceStatus(true, isPaused ? "En Pause" : "Micro actif");
+    recognition.onspeechstart = () => {
+        document.getElementById('speech-transcript').innerText = "Voix détectée…";
+        setSpeechDebug("Voix détectée par le moteur de reconnaissance.");
+    };
 
-    document.getElementById('speech-transcript').innerText =
-        "Micro actif : parlez maintenant...";
-
-    document.getElementById('speech-feedback').innerText = "";
-
-    console.log("MICRO : reconnaissance démarrée");
-};
+    recognition.onspeechend = () => {
+        setSpeechDebug("Fin de la détection de parole ; attente de la transcription.");
+    };
 
     recognition.onresult = (event) => {
         let interimTranscript = '';
         let finalTranscript = '';
 
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-            if (event.results[i].isFinal) {
-                finalTranscript += event.results[i][0].transcript;
-            } else {
-                interimTranscript += event.results[i][0].transcript;
-            }
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+            const text = event.results[i][0].transcript;
+            if (event.results[i].isFinal) finalTranscript += text;
+            else interimTranscript += text;
         }
 
-        // MISE À JOUR EN TEMPS RÉEL À L'ÉCRAN
-        // Permet de voir si l'appareil comprend "sapin" ou s'il écrit autre chose (ex: "sa pain")
-        const textAffiche = finalTranscript || interimTranscript;
-        document.getElementById('speech-transcript').innerText = `"${textAffiche}"`;
-        
-        if (finalTranscript !== '') {
-            processVoiceOrder(finalTranscript.trim().toLowerCase());
+        const displayed = (finalTranscript || interimTranscript).trim();
+        if (displayed) {
+            document.getElementById('speech-transcript').innerText =
+                (finalTranscript ? "Transcription : " : "J'entends : ") + "« " + displayed + " »";
+            setSpeechDebug(finalTranscript
+                ? "Transcription finale reçue."
+                : "Transcription provisoire reçue.");
+        }
+
+        if (finalTranscript.trim()) {
+            const phrase = finalTranscript.trim().toLowerCase();
+            // Les paroles de test comme « bonjour » sont affichées mais ne créent aucun arbre.
+            if (phrase.startsWith("gpsmarteau") || phrase.startsWith("gps marteau") ||
+                phrase.includes("efface derni")) {
+                processVoiceOrder(phrase);
+            } else {
+                document.getElementById('speech-feedback').innerText =
+                    "Voix entendue (test) — aucune commande exécutée";
+            }
         }
     };
 
- //   recognition.onerror = (event) => {
- //       document.getElementById('speech-transcript').innerText = `Erreur micro : ${event.error}`;
- //   };
- /*
-recognition.onerror = (event) => {
-
-    console.error("ERREUR MICRO :", event.error);
-
-    document.getElementById('speech-transcript').innerText =
-        "Problème microphone : " + event.error;
-
-    document.getElementById('speech-feedback').innerText =
-        "Vérifier le microphone";
-};
-*/
-
-recognition.onerror = (event) => {
-
-    const message = "ERREUR MICRO : " + event.error;
-
-    document.getElementById('speech-transcript').innerText = message;
-
-    document.getElementById('speech-feedback').innerText =
-        "Reconnaissance vocale interrompue";
-
-    console.error(message, event);
-};
+    recognition.onerror = (event) => {
+        recognitionStarting = false;
+        recognitionRunning = false;
+        const error = event.error || "erreur inconnue";
+        if (error === "not-allowed" || error === "service-not-allowed" || error === "audio-capture") {
+            speechCanRestart = false;
+        }
+        updateVoiceStatus(false, "ERREUR MICRO");
+        document.getElementById('speech-transcript').innerText =
+            "Erreur de reconnaissance : " + error;
+        setSpeechDebug("Erreur signalée par le navigateur : " + error +
+            (error === "not-allowed" || error === "service-not-allowed"
+                ? " — autorisez le microphone pour Safari dans Réglages > Safari."
+                : ""));
+    };
 
     recognition.onend = () => {
-        // Relance l'écoute dès qu'une phrase est terminée (indispensable sur iOS quand continuous=false)
-        if (activeSessionId) {
-            recognition.start();
+        recognitionStarting = false;
+        recognitionRunning = false;
+
+        if (activeSessionId && speechCanRestart) {
+            updateVoiceStatus(false, "Écoute arrêtée");
+            setSpeechDebug("Reconnaissance arrêtée. Nouvelle tentative automatique…");
+            if (recognitionRestartTimer) clearTimeout(recognitionRestartTimer);
+            recognitionRestartTimer = setTimeout(() => {
+                if (activeSessionId && speechCanRestart) startSpeechRecognition(false);
+            }, 700);
+        } else if (activeSessionId) {
+            updateVoiceStatus(false, "Autorisation requise");
+            setSpeechDebug("La reconnaissance ne redémarrera pas automatiquement. Vérifiez l'autorisation micro puis touchez le bouton.");
         } else {
             updateVoiceStatus(false, "Inactif");
         }
     };
+
+    setSpeechDebug("API de reconnaissance trouvée. Ouvrez une session puis touchez le bouton microphone.");
 }
 
-
-//function startSpeechRecognition() {
-//if (recognition && activeSessionId) {
-//try { recognition.start(); } catch(e) {}
-//}
-//}
-
-<CodeBlock language="javascript" editable>
-function startSpeechRecognition() {
-
+function startSpeechRecognition(fromButton = false) {
     const zone = document.getElementById('speech-transcript');
 
-if (!recognition) {
-        zone.innerText = "ERREUR : reconnaissance vocale non initialisée";
+    if (!recognition || !speechSupported) {
+        zone.innerText = "Impossible : reconnaissance vocale non disponible.";
+        setSpeechDebug("Aucun moteur SpeechRecognition utilisable.");
         return;
     }
 
-if (!activeSessionId) {
-        zone.innerText = "Ouvrez d'abord une session";
+    if (!activeSessionId) {
+        zone.innerText = "Ouvrez une session avant d'activer le microphone.";
         return;
     }
 
-    zone.innerText = "Demande d'activation du microphone...";
+    if (recognitionRunning || recognitionStarting) {
+        zone.innerText = "Le microphone est déjà en cours d'écoute.";
+        return;
+    }
 
-try {
+    if (recognitionRestartTimer) {
+        clearTimeout(recognitionRestartTimer);
+        recognitionRestartTimer = null;
+    }
+
+    try {
+        speechCanRestart = true;
+        recognitionStarting = true;
+        zone.innerText = "Demande d'accès au microphone…";
+        updateVoiceStatus(false, "Démarrage…");
+        setSpeechDebug(fromButton
+            ? "Démarrage demandé après votre appui sur le bouton."
+            : "Tentative de démarrage de la reconnaissance.");
         recognition.start();
-        console.log("Demande de démarrage envoyée");
-
-} catch(e) {
-        zone.innerText = "ERREUR DEMARRAGE : " + e.message;
-        console.error("Démarrage impossible :", e);
+    } catch (error) {
+        recognitionStarting = false;
+        recognitionRunning = false;
+        zone.innerText = "Démarrage impossible : " + error.message;
+        updateVoiceStatus(false, "Démarrage impossible");
+        setSpeechDebug("Exception lors de start() : " + error.name + " — " + error.message);
     }
 }
-</CodeBlock>
 
 function stopSpeechRecognition() {
-if (recognition) {
-try { recognition.stop(); } catch(e) {}
-}
+    if (recognitionRestartTimer) {
+        clearTimeout(recognitionRestartTimer);
+        recognitionRestartTimer = null;
+    }
+    if (recognition && (recognitionRunning || recognitionStarting)) {
+        try {
+            recognition.stop();
+        } catch (error) {
+            setSpeechDebug("Erreur lors de l'arrêt : " + error.message);
+        }
+    }
+    recognitionStarting = false;
+    recognitionRunning = false;
 }
 
 function updateVoiceStatus(active, text) {
-const dot = document.getElementById('status-dot');
-const txt = document.getElementById('status-text');
-const container = document.getElementById('mic-icon-container');
-const icon = document.getElementById('main-mic-icon');
-txt.innerText = text;
-if (active && !isPaused) {
-dot.className = "w-2 h-2 rounded-full bg-emerald-500 animate-ping";
-container.className = "w-12 h-12 rounded-full bg-emerald-950 border border-emerald-500 flex items-center justify-center mb-3 animate-pulse";
-icon.className = "w-6 h-6 text-emerald-400";
-icon.setAttribute('data-lucide', 'mic');
-} else if (isPaused) {
-dot.className = "w-2 h-2 rounded-full bg-amber-500";
-container.className = "w-12 h-12 rounded-full bg-amber-950 border border-amber-500 flex items-center justify-center mb-3";
-icon.className = "w-6 h-6 text-amber-400";
-icon.setAttribute('data-lucide', 'mic-off');
-} else {
-dot.className = "w-2 h-2 rounded-full bg-slate-500";
-container.className = "w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center mb-3";
-icon.className = "w-6 h-6 text-slate-400";
-icon.setAttribute('data-lucide', 'mic-off');
-}
-lucide.createIcons();
+    const dot = document.getElementById('status-dot');
+    const txt = document.getElementById('status-text');
+    const container = document.getElementById('mic-icon-container');
+    const icon = document.getElementById('main-mic-icon');
+    if (!dot || !txt || !container || !icon) return;
+
+    txt.innerText = text;
+    if (active && !isPaused) {
+        dot.className = "w-2 h-2 rounded-full bg-emerald-500 animate-ping";
+        container.className = "w-12 h-12 rounded-full bg-emerald-950 border border-emerald-500 flex items-center justify-center mb-3 animate-pulse";
+        icon.className = "w-6 h-6 text-emerald-400";
+        icon.setAttribute('data-lucide', 'mic');
+    } else if (isPaused) {
+        dot.className = "w-2 h-2 rounded-full bg-amber-500";
+        container.className = "w-12 h-12 rounded-full bg-amber-950 border border-amber-500 flex items-center justify-center mb-3";
+        icon.className = "w-6 h-6 text-amber-400";
+        icon.setAttribute('data-lucide', 'mic-off');
+    } else {
+        dot.className = "w-2 h-2 rounded-full bg-slate-500";
+        container.className = "w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center mb-3";
+        icon.className = "w-6 h-6 text-slate-400";
+        icon.setAttribute('data-lucide', 'mic-off');
+    }
+    if (window.lucide) lucide.createIcons();
 }
 
 // --- TRAITEMENT DES ORDRES VOCAUX ---
@@ -531,7 +524,8 @@ let cleanPhrase = phrase.replace(/gps\s*marteau/, "gpsmarteau");
 // Ordre : GPSMarteau Pause
 if (cleanPhrase.includes("gpsmarteau pause")) {
 isPaused = true;
-updateVoiceStatus(true, "En Pause");
+updateVoiceStatus(false, "En Pause");
+stopSpeechRecognition();
 setTimeout(() => {
 speak("G P S marteau PAUSE");
 }, 1000);
@@ -554,7 +548,7 @@ const removedLine = session.lines.pop();
 saveToStorage();
 renderDataTable();
 setTimeout(() => {
-	speak(\ Dernière ligne effacée : ${removedLine.essence} ${removedLine.diametre}`);`
+speak(`Dernière ligne effacée : ${removedLine.essence} ${removedLine.diametre}`);
 }, 1000);
 } else {
 speak("Aucune ligne à effacer");
@@ -585,11 +579,12 @@ y: currentCoords.lon
 session.lines.push(newLine);
 saveToStorage();
 renderDataTable();
-document.getElementById('speech-feedback').innerText = \ ${essence} ${diametre}`;`
-speak(\ ${essence} ${diametre})`;`
+document.getElementById('speech-feedback').innerText = `${essence} ${diametre}`;
+speak(`${essence} ${diametre}`);
 }
 } else {
 triggerRepeatFeedback();
+}
 }
 }
 
@@ -635,7 +630,7 @@ if (navigator.share) {
 const file = new File([JSON.stringify(geojson, null, 2)], filename, {type: 'application/json'});
 navigator.share({
 files: [file],
-title: Export ${session.name},
+title: `Export ${session.name}`,
 text: 'Exportation des données de martelage GPSMarteau.'
 }).catch(err => console.log(err));
 } else {
@@ -648,3 +643,6 @@ downloadAnchor.click();
 downloadAnchor.remove();
 }
 }
+    </script>
+</body>
+</html>
