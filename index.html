@@ -14,7 +14,7 @@
     <!-- ÉCRAN D'ACCUEIL : SESSIONS -->
     <div id="home-screen" class="p-4 max-w-md mx-auto">
         <header class="mb-6 flex justify-between items-center">
-            <h1 class="text-2xl font-bold tracking-tight text-emerald-400">🔨 GPSMarteau0034</h1>
+            <h1 class="text-2xl font-bold tracking-tight text-emerald-400">🔨 GPSMarteau0044</h1>
             <button onclick="createNewSession()" class="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl text-sm font-medium shadow-md flex items-center gap-1">
                 <i data-lucide="plus" class="w-4 h-4"></i> Nouvelle Session
             </button>
@@ -204,7 +204,10 @@
             appData.sessions.unshift(newSession);
             saveToStorage();
             renderHomeScreen();
-            openSession(newSession.id);
+            // Ouvre immédiatement la session créée : aucun clic supplémentaire
+            // sur son nom n'est nécessaire. Le micro reste à activer par le bouton,
+            // ce qui est plus fiable sur Safari iOS (interaction utilisateur).
+            openSession(newSession.id, false);
         }
 
         function renameSession(id) {
@@ -251,7 +254,7 @@ el.classList.toggle('hidden');
 }
 
 // --- ENREGISTREMENT EN DIRECT ---
-function openSession(id) {
+function openSession(id, startListening = true) {
 activeSessionId = id;
 // Conserve aussi l'identifiant sur l'écran de travail : cela permet de le
 // retrouver si l'état JavaScript actif est réinitialisé par Safari.
@@ -262,7 +265,13 @@ document.getElementById('active-session-title').innerText = session.name;
 document.getElementById('home-screen').classList.add('hidden');
 document.getElementById('work-screen').classList.remove('hidden');
 renderDataTable();
-startSpeechRecognition();
+if (startListening) {
+    startSpeechRecognition();
+} else {
+    document.getElementById('speech-transcript').innerText =
+        "Session ouverte. Touchez « Activer / tester le microphone » pour commencer.";
+    updateVoiceStatus(false, "Prêt à écouter");
+}
 }
 
 function closeSession() {
@@ -309,11 +318,16 @@ window.speechSynthesis.cancel(); // Annule toute parole en cours
 const utterance = new SpeechSynthesisUtterance(text);
 utterance.lang = 'fr-FR';
 if (callback) {
-utterance.onend = () => callback();
+    // onerror est également traité pour ne pas laisser l'écoute bloquée
+    utterance.onend = () => callback();
+    utterance.onerror = () => callback();
 }
 window.speechSynthesis.speak(utterance);
+} else if (callback) {
+    callback();
 }
 }
+let readbackPending = false;
 let recognitionStarting = false;
 let recognitionRunning = false;
 let recognitionRestartTimer = null;
@@ -437,7 +451,9 @@ function initSpeechRecognition() {
         recognitionStarting = false;
         recognitionRunning = false;
 
-        if (activeSessionId && speechCanRestart) {
+        if (readbackPending) {
+            updateVoiceStatus(false, "Confirmation vocale");
+        } else if (activeSessionId && speechCanRestart) {
             updateVoiceStatus(false, "Écoute arrêtée");
             setSpeechDebug("Reconnaissance arrêtée. Nouvelle tentative automatique…");
             if (recognitionRestartTimer) clearTimeout(recognitionRestartTimer);
@@ -622,12 +638,48 @@ session.lines.push(newLine);
 saveToStorage();
 renderDataTable();
 document.getElementById('speech-feedback').innerText = `${essence} ${diametre}`;
-speak(`${essence} ${diametre}`);
+repeatRecordedValuesAfterSilence(essence, diametre);
 }
 } else {
 triggerRepeatFeedback();
 }
 }
+}
+
+
+// Après chaque enregistrement, attend deux secondes de silence puis annonce
+// l'essence et le diamètre réellement sauvegardés. Le micro est arrêté pendant
+// l'annonce pour éviter que le téléphone ne se réécoute lui-même.
+function repeatRecordedValuesAfterSilence(essence, diametre) {
+    if (recognitionRestartTimer) {
+        clearTimeout(recognitionRestartTimer);
+        recognitionRestartTimer = null;
+    }
+    readbackPending = true;
+    speechCanRestart = false;
+    stopSpeechRecognition();
+    updateVoiceStatus(false, "Annonce dans 2 secondes…");
+    setTimeout(() => {
+        if (!activeSessionId || isPaused) {
+            readbackPending = false;
+            return;
+        }
+        const session = appData.sessions.find(s => s.id === activeSessionId);
+        const lastLine = session && session.lines[session.lines.length - 1];
+        if (!lastLine) {
+            readbackPending = false;
+            return;
+        }
+        const confirmation = `${lastLine.essence}, diamètre ${lastLine.diametre}`;
+        document.getElementById('speech-feedback').innerText = `Enregistré : ${confirmation}`;
+        speak(confirmation, () => {
+            readbackPending = false;
+            if (activeSessionId && !isPaused) {
+                speechCanRestart = true;
+                startSpeechRecognition(false);
+            }
+        });
+    }, 2000);
 }
 
 function triggerRepeatFeedback() {
