@@ -423,6 +423,7 @@ recognition.onstart = () => {
  //   recognition.onerror = (event) => {
  //       document.getElementById('speech-transcript').innerText = `Erreur micro : ${event.error}`;
  //   };
+ /*
 recognition.onerror = (event) => {
 
     console.error("ERREUR MICRO :", event.error);
@@ -432,6 +433,19 @@ recognition.onerror = (event) => {
 
     document.getElementById('speech-feedback').innerText =
         "Vérifier le microphone";
+};
+*/
+
+recognition.onerror = (event) => {
+
+    const message = "ERREUR MICRO : " + event.error;
+
+    document.getElementById('speech-transcript').innerText = message;
+
+    document.getElementById('speech-feedback').innerText =
+        "Reconnaissance vocale interrompue";
+
+    console.error(message, event);
 };
 
     recognition.onend = () => {
@@ -445,11 +459,39 @@ recognition.onerror = (event) => {
 }
 
 
+//function startSpeechRecognition() {
+//if (recognition && activeSessionId) {
+//try { recognition.start(); } catch(e) {}
+//}
+//}
+
+<CodeBlock language="javascript" editable>
 function startSpeechRecognition() {
-if (recognition && activeSessionId) {
-try { recognition.start(); } catch(e) {}
+
+    const zone = document.getElementById('speech-transcript');
+
+if (!recognition) {
+        zone.innerText = "ERREUR : reconnaissance vocale non initialisée";
+        return;
+    }
+
+if (!activeSessionId) {
+        zone.innerText = "Ouvrez d'abord une session";
+        return;
+    }
+
+    zone.innerText = "Demande d'activation du microphone...";
+
+try {
+        recognition.start();
+        console.log("Demande de démarrage envoyée");
+
+} catch(e) {
+        zone.innerText = "ERREUR DEMARRAGE : " + e.message;
+        console.error("Démarrage impossible :", e);
+    }
 }
-}
+</CodeBlock>
 
 function stopSpeechRecognition() {
 if (recognition) {
