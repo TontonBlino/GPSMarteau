@@ -14,7 +14,7 @@
     <!-- ÉCRAN D'ACCUEIL : SESSIONS -->
     <div id="home-screen" class="p-4 max-w-md mx-auto">
         <header class="mb-6 flex justify-between items-center">
-            <h1 class="text-2xl font-bold tracking-tight text-emerald-400">🔨 GPSMarteau0010</h1>
+            <h1 class="text-2xl font-bold tracking-tight text-emerald-400">🔨 GPSMarteau0029</h1>
             <button onclick="createNewSession()" class="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl text-sm font-medium shadow-md flex items-center gap-1">
                 <i data-lucide="plus" class="w-4 h-4"></i> Nouvelle Session
             </button>
@@ -64,7 +64,7 @@
                 Activer / tester le microphone
             </button>
             <p id="speech-debug" class="text-xs text-slate-500 mt-2" aria-live="polite">
-                Le test affichera ici l'état de la reconnaissance vocale.
+                Créez une session, puis touchez ce bouton pour autoriser et tester le microphone.
             </p>
         </div>
 
@@ -322,20 +322,39 @@ function setSpeechDebug(message) {
     console.log("[GPSMarteau - vocal]", message);
 }
 
-function initSpeechRecognition() {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+function getSpeechRecognitionConstructor() {
+    // Safari iOS expose généralement l'API sous le nom webkitSpeechRecognition.
+    return window.SpeechRecognition || window.webkitSpeechRecognition || null;
+}
 
-    if (!SpeechRecognition) {
+function initSpeechRecognition() {
+    const SpeechRecognitionConstructor = getSpeechRecognitionConstructor();
+
+    if (!SpeechRecognitionConstructor) {
         speechSupported = false;
-        updateVoiceStatus(false, "Non disponible");
+        recognition = null;
+        updateVoiceStatus(false, "API non détectée");
+        const diagnostic = [
+            "API non trouvée dans cette page.",
+            "window.SpeechRecognition : " + typeof window.SpeechRecognition,
+            "window.webkitSpeechRecognition : " + typeof window.webkitSpeechRecognition,
+            "Protocole : " + window.location.protocol,
+            "Contexte sécurisé : " + String(window.isSecureContext)
+        ].join("\n");
         document.getElementById('speech-transcript').innerText =
-            "Reconnaissance vocale indisponible dans ce navigateur.";
-        setSpeechDebug("API SpeechRecognition absente. Essayez Safari à jour.");
+            "Safari ne fournit pas l'API vocale à cette page.";
+        setSpeechDebug(diagnostic);
+        return;
+    }
+
+    // Ne recrée pas inutilement l'objet si l'initialisation a déjà réussi.
+    if (recognition && speechSupported) {
+        setSpeechDebug("API détectée : " + (window.webkitSpeechRecognition ? "webkitSpeechRecognition" : "SpeechRecognition"));
         return;
     }
 
     speechSupported = true;
-    recognition = new SpeechRecognition();
+    recognition = new SpeechRecognitionConstructor();
     recognition.continuous = false;
     recognition.interimResults = true;
     recognition.lang = 'fr-FR';
@@ -435,9 +454,13 @@ function initSpeechRecognition() {
 function startSpeechRecognition(fromButton = false) {
     const zone = document.getElementById('speech-transcript');
 
+    // Nouvelle détection au moment de l'appui : certains navigateurs mobiles
+    // n'exposent pas toutes les fonctions avant une interaction utilisateur.
     if (!recognition || !speechSupported) {
-        zone.innerText = "Impossible : reconnaissance vocale non disponible.";
-        setSpeechDebug("Aucun moteur SpeechRecognition utilisable.");
+        initSpeechRecognition();
+    }
+    if (!recognition || !speechSupported) {
+        zone.innerText = "Reconnaissance vocale non détectée dans cette page.";
         return;
     }
 
