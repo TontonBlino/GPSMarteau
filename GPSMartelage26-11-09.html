@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>GPSMarteau</title>
+    <!-- Tailwind CSS pour un design propre et mobile-friendly -->
+    <script src="https://tailwindcss.com"></script>
+    <!-- Icônes Lucide -->
+    <script src="https://unpkg.com"></script>
+</head>
+<body class="bg-slate-900 text-slate-100 font-sans antialiased select-none">
+
+    <!-- ÉCRAN D'ACCUEIL : SESSIONS -->
+    <div id="home-screen" class="p-4 max-w-md mx-auto">
+        <header class="mb-6 flex justify-between items-center">
+            <h1 class="text-2xl font-bold tracking-tight text-emerald-400">🔨 GPSMarteau</h1>
+            <button onclick="createNewSession()" class="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl text-sm font-medium shadow-md flex items-center gap-1">
+                <i data-lucide="plus" class="w-4 h-4"></i> Nouvelle Session
+            </button>
+        </header>
+
+        <section class="mb-6">
+            <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-3">Sessions Actives</h2>
+            <div id="sessions-list" class="space-y-3">
+                <!-- Les sessions actives seront injectées ici -->
+            </div>
+        </section>
+
+        <section class="mt-8 border-t border-slate-800 pt-6">
+            <button onclick="toggleTrash()" class="flex items-center gap-2 text-slate-400 hover:text-slate-200 text-sm font-medium">
+                <i data-lucide="trash-2" class="w-4 h-4"></i> Corbeille (Purge 30j)
+            </button>
+            <div id="trash-list" class="hidden mt-3 space-y-3">
+                <!-- Les sessions supprimées seront injectées ici -->
+            </div>
+        </section>
+    </div>
+
+    <!-- ÉCRAN DE TRAVAIL : ENREGISTREMENT & DIALOGUE VOCAL -->
+    <div id="work-screen" class="hidden fixed inset-0 bg-slate-950 flex flex-col p-4 max-w-md mx-auto">
+        <header class="flex justify-between items-center border-b border-slate-800 pb-3">
+            <div>
+                <button onclick="closeSession()" class="text-slate-400 hover:text-white flex items-center gap-1 text-sm">
+                    <i data-lucide="chevron-left" class="w-4 h-4"></i> Retour
+                </button>
+                <h1 id="active-session-title" class="text-lg font-bold text-emerald-400 mt-1">Session</h1>
+            </div>
+            <div id="voice-indicator" class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-800 text-xs font-semibold">
+                <span class="w-2 h-2 rounded-full bg-slate-500 animate-pulse" id="status-dot"></span>
+                <span id="status-text">Inactif</span>
+            </div>
+        </header>
+
+        <!-- Zone d'état vocal -->
+        <div class="my-6 bg-slate-900 rounded-2xl p-4 border border-slate-800 flex flex-col items-center justify-center min-h-[140px] text-center">
+            <div id="mic-icon-container" class="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center mb-3">
+                <i data-lucide="mic-off" id="main-mic-icon" class="w-6 h-6 text-slate-400"></i>
+            </div>
+            <p id="speech-transcript" class="text-sm text-slate-400 italic px-2">"En attente de votre ordre..."</p>
+            <p id="speech-feedback" class="text-base font-bold text-emerald-400 mt-2 h-6"></p>
+        </div>
+
+        <!-- Tableau des données capturées -->
+        <div class="flex-1 overflow-y-auto">
+            <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Données capturées</h3>
+            <div class="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
+                <table class="w-full text-left text-sm">
+                    <thead class="bg-slate-800 text-slate-400 text-xs uppercase">
+                        <tr>
+                            <th class="p-3">Essence</th>
+                            <th class="p-3 text-center">Diam.</th>
+                            <th class="p-3 text-right">Coords (WGS84)*</th>
+                        </tr>
+                    </thead>
+                    <tbody id="data-table-body" class="divide-y divide-slate-800">
+                        <!-- Lignes de données injectées ici -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- LOGIQUE LOGICIELLE DE L'APPLICATION -->
+    <script>
+        // --- ÉTAT GLOBAL DE L'APPLICATION ---
+        let appData = JSON.parse(localStorage.getItem('gps_marteau_data')) || { sessions: [] };
+        let activeSessionId = null;
+        let recognition = null;
+        let isPaused = false;
+        let currentCoords = { lat: 0, lon: 0 };
+
+        // --- ENCLENCHEMENT DE LA GÉOLOCALISATION EN CONTINU ---
+        if (navigator.geolocation) {
+            navigator.geolocation.watchPosition(
+                (pos) => {
+                    currentCoords.lat = pos.coords.latitude;
+                    currentCoords.lon = pos.coords.longitude;
+                },
+                (err) => console.error("Erreur GPS: ", err),
+                { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+            );
+        }
+
+        // --- INITIALISATION DE L'APP ---
+        window.onload = () => {
+            purgeOldDeletedSessions();
+            renderHomeScreen();
+            initSpeechRecognition();
+            lucide.createIcons();
+        };
+
+        function saveToStorage() {
+            localStorage.setItem('gps_marteau_data', JSON.stringify(appData));
+        };
+
+        // --- GESTION DES SESSIONS ---
+        function renderHomeScreen() {
+            const activeList = document.getElementById('sessions-list');
+            const trashList = document.getElementById('trash-list');
+            activeList.innerHTML = '';
+            trashList.innerHTML = '';
+
+            if (appData.sessions.filter(s => !s.deleted).length === 0) {
+                activeList.innerHTML = `<p class="text-sm text-slate-500 italic py-4 text-center">Aucune session active. Créez-en une !</p>`;
+            }
+
+            appData.sessions.forEach(session => {
+                if (!session.deleted) {
+                    activeList.appendChild(createSessionRow(session, false));
+                } else {
+                    trashList.appendChild(createSessionRow(session, true));
+                }
+            });
+            lucide.createIcons();
+        };
+
+        function createSessionRow(session, isDeleted) {
+            const div = document.createElement('div');
+            div.className = "bg-slate-800 p-4 rounded-xl border border-slate-700 flex flex-col gap-3 shadow-sm";
+            
+            // Header de la carte de session
+            const header = document.createElement('div');
+            header.className = "flex justify-between items-start";
+            
+            const titleGroup = document.createElement('div');
+            titleGroup.className = "cursor-pointer flex-1";
+            titleGroup.onclick = () => { if(!isDeleted) openSession(session.id); };
+            
+            const title = document.createElement('h3');
+            title.className = "font-bold text-slate-100 flex items-center gap-2 hover:text-emerald-400 transition";
+            title.innerHTML = `<i data-lucide="folder" class="w-4 h-4 text-emerald-500"></i> ${session.name}`;
+            
+            const meta = document.createElement('p');
+            meta.className = "text-xs text-slate-400 mt-0.5";
+            meta.innerText = `${session.lines.length} arbres enregistrés — Créé le ${session.date}`;
+            
+            titleGroup.appendChild(title);
+            titleGroup.appendChild(meta);
+            header.appendChild(titleGroup);
+
+            // Menu d'actions
+            const actions = document.createElement('div');
+            actions.className = "flex gap-2 text-slate-400";
+
+            if (!isDeleted) {
+                // Bouton renommer
+                actions.innerHTML += `<button onclick="renameSession('${session.id}')" class="p-1 hover:text-blue-400" title="Renommer"><i data-lucide="edit-3" class="w-4 h-4"></i></button>`;
+                // Bouton partager (Simulation GPKG JSON)
+                actions.innerHTML += `<button onclick="shareSession('${session.id}')" class="p-1 hover:text-amber-400" title="Partager"><i data-lucide="share-2" class="w-4 h-4"></i></button>`;
+                // Bouton supprimer
+                actions.innerHTML += `<button onclick="deleteSession('${session.id}')" class="p-1 hover:text-red-400" title="Supprimer"><i data-lucide="trash" class="w-4 h-4"></i></button>`;
+            } else {
+                // Bouton restaurer
+                actions.innerHTML += `<button onclick="restoreSession('${session.id}')" class="p-1 hover:text-emerald-400" title="Restaurer"><i data-lucide="refresh-cw" class="w-4 h-4"></i></button>`;
+            }
+            
+            header.appendChild(actions);
+            div.appendChild(header);
+            return div;
+        }
+
+        function createNewSession() {
+            const now = new Date();
+            const defaultName = now.getFullYear() + String(now.getMonth() + 1).padStart(2, '0') + String(now.getDate()).padStart(2, '0');
+            const newSession = {
+                id: 'sess_' + Date.now(),
+                name: defaultName,
+                date: now.toLocaleDateString('fr-FR'),
+                deleted: false,
+                deletedAt: null,
+                lines: []
+            };
+            appData.sessions.unshift(newSession);
+            saveToStorage();
+            renderHomeScreen();
+            openSession(newSession.id);
+        }
+
+        function renameSession(id) {
+            const session = appData.sessions.find(s => s.id === id);
+            const newName = prompt("Nouveau nom de la session :", session.name);
+            if (newName && newName.trim() !== "") {
+			session.name = newName.trim();
+			saveToStorage();
+			renderHomeScreen();
+			}
+}
+
+function deleteSession(id) {
+const session = appData.sessions.find(s => s.id === id);
+session.deleted = true;
+session.deletedAt = Date.now();
+saveToStorage();
+renderHomeScreen();
+}
+
+function restoreSession(id) {
+const session = appData.sessions.find(s => s.id === id);
+session.deleted = false;
+session.deletedAt = null;
+saveToStorage();
+renderHomeScreen();
+}
+
+function purgeOldDeletedSessions() {
+const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+const now = Date.now();
+appData.sessions = appData.sessions.filter(s => {
+if (s.deleted && (now - s.deletedAt) > thirtyDaysMs) {
+return false;
+}
+return true;
+});
+saveToStorage();
+}
+
+function toggleTrash() {
+const el = document.getElementById('trash-list');
+el.classList.toggle('hidden');
+}
+
+// --- ENREGISTREMENT EN DIRECT ---
+function openSession(id) {
+activeSessionId = id;
+isPaused = false;
+const session = appData.sessions.find(s => s.id === id);
+document.getElementById('active-session-title').innerText = session.name;
+document.getElementById('home-screen').classList.add('hidden');
+document.getElementById('work-screen').classList.remove('hidden');
+renderDataTable();
+startSpeechRecognition();
+}
+
+function closeSession() {
+stopSpeechRecognition();
+activeSessionId = null;
+document.getElementById('work-screen').classList.add('hidden');
+document.getElementById('home-screen').classList.remove('hidden');
+renderHomeScreen();
+}
+
+function renderDataTable() {
+const session = appData.sessions.find(s => s.id === activeSessionId);
+const tbody = document.getElementById('data-table-body');
+tbody.innerHTML = '';
+if (session.lines.length === 0) {
+tbody.innerHTML = <tr><td colspan="3" class="p-4 text-center text-slate-500 italic">Aucune donnée dictée</td></tr>;
+return;
+}
+// Affiche les lignes (les plus récentes en premier)
+[...session.lines].reverse().forEach(line => {
+const tr = document.createElement('tr');
+tr.className = "hover:bg-slate-800/50";
+tr.innerHTML = `
+${line.essence}
+${line.diametre}
+\({line.x.toFixed(5)}, \){line.y.toFixed(5)}
+`;
+tbody.appendChild(tr);
+});
+}
+
+// --- RECONNAISSANCE ET SYNTHÈSE VOCALE (Web Speech API) ---
+function speak(text, callback) {
+if ('speechSynthesis' in window) {
+window.speechSynthesis.cancel(); // Annule toute parole en cours
+const utterance = new SpeechSynthesisUtterance(text);
+utterance.lang = 'fr-FR';
+if (callback) {
+utterance.onend = () => callback();
+}
+window.speechSynthesis.speak(utterance);
+}
+}
+/*
+function initSpeechRecognition() {
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+if (!SpeechRecognition) {
+alert("La reconnaissance vocale n'est pas supportée par votre navigateur (Utilisez Safari sur iOS ou Chrome).");
+return;
+}
+recognition = new SpeechRecognition();
+recognition.continuous = true;
+recognition.interimResults = false;
+recognition.lang = 'fr-FR';
+recognition.onstart = () => {
+updateVoiceStatus(true, isPaused ? "En Pause" : "En écoute");
+};
+recognition.onerror = (event) => {
+console.error("Erreur de reco vocale:", event.error);
+if (event.error === 'not-allowed') {
+alert("Veuillez autoriser l'accès au micro.");
+}
+};
+recognition.onend = () => {
+// Redémarrage automatique si on est toujours dans l'écran de travail
+//BG if (activeSessionId) {
+recognition.start();
+//BG } else {
+//BG updateVoiceStatus(false, "Inactif");
+//BG }
+};
+recognition.onresult = (event) => {
+const resultIndex = event.resultIndex;
+const transcript = event.results[resultIndex][0].transcript.trim().toLowerCase();
+document.getElementById('speech-transcript').innerText = "${event.results[resultIndex][0].transcript.trim()}";
+processVoiceOrder(transcript);
+};
+}
+*/
+function initSpeechRecognition() {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+        alert("La reconnaissance vocale n'est pas supportée. Sur iPhone, utilisez obligatoirement Safari.");
+        return;
+    }
+    recognition = new SpeechRecognition();
+    // EN PASSANT CONTINUOUS À FALSE ET INTERIM RESULTS À TRUE, ON VOIT LE TEXTE S'AFFICHER AU FUR ET À MESURE
+    recognition.continuous = false; 
+    recognition.interimResults = true; 
+    recognition.lang = 'fr-FR';
+
+    recognition.onstart = () => {
+        updateVoiceStatus(true, isPaused ? "En Pause" : "En écoute");
+    };
+
+    recognition.onresult = (event) => {
+        let interimTranscript = '';
+        let finalTranscript = '';
+
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+            if (event.results[i].isFinal) {
+                finalTranscript += event.results[i][0].transcript;
+            } else {
+                interimTranscript += event.results[i][0].transcript;
+            }
+        }
+
+        // MISE À JOUR EN TEMPS RÉEL À L'ÉCRAN
+        // Permet de voir si l'appareil comprend "sapin" ou s'il écrit autre chose (ex: "sa pain")
+        const textAffiche = finalTranscript || interimTranscript;
+        document.getElementById('speech-transcript').innerText = `"${textAffiche}"`;
+        
+        if (finalTranscript !== '') {
+            processVoiceOrder(finalTranscript.trim().toLowerCase());
+        }
+    };
+
+    recognition.onerror = (event) => {
+        document.getElementById('speech-transcript').innerText = `Erreur micro : ${event.error}`;
+    };
+
+    recognition.onend = () => {
+        // Relance l'écoute dès qu'une phrase est terminée (indispensable sur iOS quand continuous=false)
+        if (activeSessionId) {
+            recognition.start();
+        } else {
+            updateVoiceStatus(false, "Inactif");
+        }
+    };
+}
+
+
+function startSpeechRecognition() {
+if (recognition && activeSessionId) {
+try { recognition.start(); } catch(e) {}
+}
+}
+
+function stopSpeechRecognition() {
+if (recognition) {
+try { recognition.stop(); } catch(e) {}
+}
+}
+
+function updateVoiceStatus(active, text) {
+const dot = document.getElementById('status-dot');
+const txt = document.getElementById('status-text');
+const container = document.getElementById('mic-icon-container');
+const icon = document.getElementById('main-mic-icon');
+txt.innerText = text;
+if (active && !isPaused) {
+dot.className = "w-2 h-2 rounded-full bg-emerald-500 animate-ping";
+container.className = "w-12 h-12 rounded-full bg-emerald-950 border border-emerald-500 flex items-center justify-center mb-3 animate-pulse";
+icon.className = "w-6 h-6 text-emerald-400";
+icon.setAttribute('data-lucide', 'mic');
+} else if (isPaused) {
+dot.className = "w-2 h-2 rounded-full bg-amber-500";
+container.className = "w-12 h-12 rounded-full bg-amber-950 border border-amber-500 flex items-center justify-center mb-3";
+icon.className = "w-6 h-6 text-amber-400";
+icon.setAttribute('data-lucide', 'mic-off');
+} else {
+dot.className = "w-2 h-2 rounded-full bg-slate-500";
+container.className = "w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center mb-3";
+icon.className = "w-6 h-6 text-slate-400";
+icon.setAttribute('data-lucide', 'mic-off');
+}
+lucide.createIcons();
+}
+
+// --- TRAITEMENT DES ORDRES VOCAUX ---
+function processVoiceOrder(phrase) {
+// Nettoyage de la phrase (parfois le micro écrit gps marteau en deux mots)
+let cleanPhrase = phrase.replace(/gps\s*marteau/, "gpsmarteau");
+// Ordre : GPSMarteau Pause
+if (cleanPhrase.includes("gpsmarteau pause")) {
+isPaused = true;
+updateVoiceStatus(true, "En Pause");
+setTimeout(() => {
+speak("G P S marteau PAUSE");
+}, 1000);
+return;
+}
+// Ordre : GPSMarteau Reprise
+if (cleanPhrase.includes("gpsmarteau reprise")) {
+isPaused = false;
+updateVoiceStatus(true, "En écoute");
+speak("G P S marteau REPRISE");
+return;
+}
+// Si l'application est en pause, on ignore tous les autres ordres
+if (isPaused) return;
+// Ordre : GPSMarteau Efface Dernière
+if (cleanPhrase.includes("gpsmarteau efface dernière") || cleanPhrase.includes("efface derniere")) {
+const session = appData.sessions.find(s => s.id === activeSessionId);
+if (session.lines.length > 0) {
+const removedLine = session.lines.pop();
+saveToStorage();
+renderDataTable();
+setTimeout(() => {
+speak(Dernière ligne effacée : ${removedLine.essence} ${removedLine.diametre});
+}, 1000);
+} else {
+speak("Aucune ligne à effacer");
+}
+return;
+}
+
+// Ordre principal : "GPSMarteau [Essence] [Nombre]"
+if (cleanPhrase.startsWith("gpsmarteau")) {
+// Découpe les mots après "gpsmarteau"
+const tokens = cleanPhrase.replace("gpsmarteau", "").trim().split(/\s+/);
+if (tokens.length >= 2) {
+const essence = capitalizeFirstLetter(tokens[0]);
+const diametreStr = tokens[1];
+const diametre = parseInt(diametreStr, 10);
+// Validation de l'essence (chaîne) et du diamètre (entier entre 0 et 150)
+if (isNaN(diametre) || diametre < 0 || diametre > 150 || essence.length < 2) {
+triggerRepeatFeedback();
+} else {
+// Enregistrement de l'arbre
+const session = appData.sessions.find(s => s.id === activeSessionId);
+const newLine = {
+essence: essence,
+diametre: diametre,
+x: currentCoords.lat, // Stocké en WGS84 nativement (voir remarque ci-dessous)
+y: currentCoords.lon
+};
+session.lines.push(newLine);
+saveToStorage();
+renderDataTable();
+document.getElementById('speech-feedback').innerText = ${essence} ${diametre};
+speak(${essence} ${diametre});
+}
+} else {
+triggerRepeatFeedback();
+}
+}
+
+function triggerRepeatFeedback() {
+stopSpeechRecognition(); // On coupe la reco pour ne pas s'auto-écouter
+setTimeout(() => {
+speak("répétez", () => {
+startSpeechRecognition();
+});
+}, 2000);
+}
+
+function capitalizeFirstLetter(string) {
+return string.charAt(0).toUpperCase() + string.slice(1);
+}
+
+// --- EXPORT & PARTAGE EN FICHIER (Remarque technique GPKG) ---
+function shareSession(id) {
+const session = appData.sessions.find(s => s.id === id);
+const dateStr = new Date().toISOString().slice(0,10).replace(/-/g, "");
+const filename = GPSMartelage_${session.name}_${dateStr}.json; // .json ou .gpkg simulé
+// Note technique : Un fichier GeoPackage (.gpkg) est une base de données SQLite binaire complexe.
+// Les navigateurs Web ne peuvent pas compiler un binaire GPKG de manière native sans lourde bibliothèque (comme SQL.js).
+// Pour le partage d'une WebApp mobile, nous générons un GeoJSON standard exportable lisible par QGIS / ArcGIS.
+const geojson = {
+type: "FeatureCollection",
+name: filename,
+features: session.lines.map(line => ({
+type: "Feature",
+properties: {
+essence: line.essence,
+diametre: line.diametre
+},
+geometry: {
+type: "Point",
+coordinates: [line.y, line.x] // [Longitude, Latitude] pour format standard SIG
+}
+}))
+};
+const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(geojson));
+// Création du mécanisme de partage natif mobile ou téléchargement
+if (navigator.share) {
+const file = new File([JSON.stringify(geojson, null, 2)], filename, {type: 'application/json'});
+navigator.share({
+files: [file],
+title: Export ${session.name},
+text: 'Exportation des données de martelage GPSMarteau.'
+}).catch(err => console.log(err));
+} else {
+// Fallback ordinateur / vieux navigateurs
+const downloadAnchor = document.createElement('a');
+downloadAnchor.setAttribute("href", dataStr);
+downloadAnchor.setAttribute("download", filename);
+document.body.appendChild(downloadAnchor);
+downloadAnchor.click();
+downloadAnchor.remove();
+}
+}

@@ -1,0 +1,25 @@
+peux tu développer une application iPhone (iPhone 15 pro Max iOS Pro Max) ou sinon web :
+	1.	reconnaissance vocale
+	2.	Ordre principal : Quand on dit le mot « GPSMarteau » puis une essence d’arbre (par exemple Sapin, ou Chêne, etc), puis un nombre entier (entre 0 et 150) => insérer une ligne (dans la mémoire de l’appli) :
+		⁃	« essence », 
+		⁃	« diamètre », 
+		⁃	point gps (La projection des coordonnées est : WGS 84).
+		⁃	Exemple : si je dis « GPSMarteau Sapin 45 » => insérer la ligne :
+			•	essence=« Sapin »; 
+			•	diamètre=« 45 »; 
+			•	x=latitude de la position GPS du smartphone; 
+			•	y=longitude de la position GPS du smartphone
+	3.	Une fois la ligne insérée l’application répète oralement l’essence et le diamètre. Par exemple si je dis : « Martèle Sapin 45 », l’application dit : « Sapin 45 ».
+	4.	Si l’application ne comprend pas un terme de l’ordre, elle attend 2 secondes et dit « répétez ». 
+	5.	Recommence en 2. 
+	6.	Une liste de sessions d’enregistrements est proposée sur l’écran d’accueil. Une session peut être (en pointant dessus) :
+		⁃	Nommée (nom par défaut, en chiffres : année+mois+jour)
+		⁃	Renommée (texte libre)
+		⁃	Reprise : l’application se met en écoute afin de continuer d’enregistrer des lignes dans cette session => 2.
+		⁃	Supprimée (mise dans un dossier de sessions supprimées. Ce dossier est purgé au démarrage de l’application lorsque les sessions ont été supprimées depuis  au moins 30 jours)
+		⁃	Visualisée (ou voit un tableau avec toutes les lignes enregistrées : essence, diamètre, latitude, longitude)
+		⁃	Partagée (toutes options de partage du smartphone) sous forme de fichier JSON dont le nom est (modifiable) : « GPSMartelage+nom+date ».
+	8.	Autres ordres vocaux : 
+		a)	Si je dis « GPSMarteau Efface Dernière » : l’application efface la dernière ligne qui a été enregistrée. Puis elle attend 1 seconde et dit « Dernière ligne effacée : » puis dit l’essence et le diamètre de la ligne effacée. Avec l’exemple précédent l’application dit « Dernière ligne effacée : Sapin 45 ».
+		b)	Si je dis « GPSMarteau Pause », l’application attend 1 seconde et dit « GPSMarteau PAUSE » puis n’enregistre plus de nouvelle ligne, et se remet à attendre des ordres.
+		c)	Si je dis « GPSMarteau Reprise », l’application dit « GPSMarteau REPRISE » puis se remet à attendre des ordres.
