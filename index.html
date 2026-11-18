@@ -321,12 +321,53 @@ recognition.start();
 //BG updateVoiceStatus(false, "Inactif");
 //BG }
 };
+//recognition.onresult = (event) => {
+//const resultIndex = event.resultIndex;
+//const transcript = event.results[resultIndex][0].transcript.trim().toLowerCase();
+//document.getElementById('speech-transcript').innerText = "${event.results[resultIndex][0].transcript.trim()}";
+//processVoiceOrder(transcript);
+//};
+
 recognition.onresult = (event) => {
-const resultIndex = event.resultIndex;
-const transcript = event.results[resultIndex][0].transcript.trim().toLowerCase();
-document.getElementById('speech-transcript').innerText = "${event.results[resultIndex][0].transcript.trim()}";
-processVoiceOrder(transcript);
+
+    let interimTranscript = '';
+    let finalTranscript = '';
+
+    for (let i = event.resultIndex; i < event.results.length; ++i) {
+
+        let texte = event.results[i][0].transcript;
+
+        if (event.results[i].isFinal) {
+            finalTranscript += texte;
+        } else {
+            interimTranscript += texte;
+        }
+    }
+
+    // AFFICHAGE EN TEMPS REEL DE CE QUE LE MICRO ENTEND
+    const zoneTranscription = document.getElementById('speech-transcript');
+
+    const texteAffiche = finalTranscript || interimTranscript;
+
+    zoneTranscription.innerText = texteAffiche
+        ? 'Entendu : "' + texteAffiche + '"'
+        : 'En attente de votre voix...';
+
+    // DIAGNOSTIC DANS LA CONSOLE DU NAVIGATEUR
+    console.log("TRANSCRIPTION :", texteAffiche);
+
+    // TRAITEMENT UNIQUEMENT QUAND LA PHRASE EST TERMINEE
+    if (finalTranscript !== '') {
+
+        console.log("COMMANDE FINALE :", finalTranscript);
+
+        document.getElementById('speech-feedback').innerText =
+            "Commande entendue";
+
+        processVoiceOrder(finalTranscript.trim().toLowerCase());
+    }
 };
+
 }
 */
 function initSpeechRecognition() {
@@ -341,9 +382,21 @@ function initSpeechRecognition() {
     recognition.interimResults = true; 
     recognition.lang = 'fr-FR';
 
-    recognition.onstart = () => {
-        updateVoiceStatus(true, isPaused ? "En Pause" : "En écoute");
-    };
+ //   recognition.onstart = () => {
+ //       updateVoiceStatus(true, isPaused ? "En Pause" : "En écoute");
+ //   };
+
+recognition.onstart = () => {
+
+    updateVoiceStatus(true, isPaused ? "En Pause" : "Micro actif");
+
+    document.getElementById('speech-transcript').innerText =
+        "Micro actif : parlez maintenant...";
+
+    document.getElementById('speech-feedback').innerText = "";
+
+    console.log("MICRO : reconnaissance démarrée");
+};
 
     recognition.onresult = (event) => {
         let interimTranscript = '';
@@ -367,9 +420,19 @@ function initSpeechRecognition() {
         }
     };
 
-    recognition.onerror = (event) => {
-        document.getElementById('speech-transcript').innerText = `Erreur micro : ${event.error}`;
-    };
+ //   recognition.onerror = (event) => {
+ //       document.getElementById('speech-transcript').innerText = `Erreur micro : ${event.error}`;
+ //   };
+recognition.onerror = (event) => {
+
+    console.error("ERREUR MICRO :", event.error);
+
+    document.getElementById('speech-transcript').innerText =
+        "Problème microphone : " + event.error;
+
+    document.getElementById('speech-feedback').innerText =
+        "Vérifier le microphone";
+};
 
     recognition.onend = () => {
         // Relance l'écoute dès qu'une phrase est terminée (indispensable sur iOS quand continuous=false)
